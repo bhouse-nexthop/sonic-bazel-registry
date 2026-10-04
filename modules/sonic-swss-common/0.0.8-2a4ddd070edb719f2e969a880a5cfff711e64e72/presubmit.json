@@ -6,8 +6,29 @@
   "consumer_deps": [
     {
       "name": "sonic-build-infra",
-      "version": "0.0.6-553b2f70f9ba77b74befdf77674894166139ddcc",
+      "version": "0.0.15-6653ac1a0b15488a4b54f69ca78440b52be3ccf8",
       "repo_name": "sonic_build_infra"
+    },
+    {
+      "name": "tar.bzl",
+      "version": "0.10.5-sonic.1"
+    },
+    {
+      "name": "rules_distroless",
+      "version": "0.9.4-sonic.1"
+    },
+    {
+      "name": "rules_cc",
+      "version": "0.2.20"
+    },
+    {
+      "name": "rules_go",
+      "version": "0.64.1-sonic.1",
+      "repo_name": "io_bazel_rules_go"
+    },
+    {
+      "name": "libnl3",
+      "version": "3.7.0-sonic.2"
     }
   ],
   "platforms": {
@@ -35,6 +56,13 @@
     "@sonic-swss-common//tests:defaultvalueprovider_ut",
     "@sonic-swss-common//dist:libswsscommon_package_test",
     "@sonic-swss-common//pyext:swsscommon_package_test",
-    "@sonic-swss-common//goext:swsscommon_runtime_test"
-  ]
+    "@sonic-swss-common//goext:swsscommon_runtime_test",
+    "@sonic-swss-common//dist:package_timestamps_test"
+  ],
+  "build_flags": [
+    "--@sonic-swss-common//tools/bazel:yang_modules=True"
+  ],
+  "go_sdk": {
+    "version": "1.25.0"
+  }
 }
