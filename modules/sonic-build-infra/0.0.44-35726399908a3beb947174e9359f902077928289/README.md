@@ -1,52 +1,18 @@
-# Native component tools and installation TAR interfaces
+# Finalized package controls with the retained native tools
 
-This entry registers merged source commit
-[`34de7330abc72229dfc8dab88dec71b89c52aa88`](https://github.com/securely1g/sonic-build-infra/commit/34de7330abc72229dfc8dab88dec71b89c52aa88)
-from [build-infra #67](https://github.com/securely1g/sonic-build-infra/pull/67)
-as `0.0.25-34de7330abc72229dfc8dab88dec71b89c52aa88`. It fetches the owning repository's archive directly and keeps
-published `0.0.25-17a1e555291c64be1a6ff008f33352bffc4f8e5c` and every other
-published entry unchanged.
+This updates the sole unpublished infrastructure `0.0.26` candidate from [registry #179](https://github.com/securely1g/sonic-bazel-registry/pull/179). It adds [infra #77](https://github.com/securely1g/sonic-build-infra/pull/77)'s finalized-control metadata fix while preserving the existing CLI/XML/BFD, DocBook, kernel-tool subset, debug-symbol permissions and native component interfaces. Every published version is unchanged.
 
-[FRR #51](https://github.com/securely1g/sonic-buildimage/pull/51) needs shared
-native-runtime execution for its `clippy_binary` code generator and installation
-TAR interfaces that preserve its declared private-library search path. With
-`preserve_install_rpath=True`, an installed FRR library retains
-`/usr/lib/x86_64-linux-gnu/frr` while Bazel build-directory paths are removed.
-[libteam #61](https://github.com/securely1g/sonic-buildimage/pull/61) uses the
-source-owned runtime/TAR interfaces. Registering this version makes the merged
-interfaces available; it does not update those consumers' selections.
+The independent source fix is `0b920096239bdafe9952aecde461e70e14b57761` on maintained master. The consumed combined source is `51c838da6ff57295fde6e0bc3807841cb31a8568`: existing `0378d53824b18b253ecbd6faadba00e505ff4ccf` plus only that fix, with its CI branch guard adapted to preserve the existing tools-only checks. Production metadata and regression files match the independent fix exactly. The existing native-interface and registry-visibility patches remain byte-for-byte unchanged.
 
-## Source and patch provenance
+OTEL's source-built runtime TAR installs `lib/systemd/system/otelcol-contrib.service` and uses its existing finalized release control, version `0.144.0`. It has no Debian source recipe or unfinished helper substitutions. Previously the metadata action invoked `dh_installsystemd` and failed for missing debhelper compatibility input. The owner now runs recipe helpers only for source templates; finalized controls retain their actual dependencies. ELF symbol/dependency analysis and `dpkg-gencontrol` remain active. No DEB is built or new Debian recipe invented.
 
-Compared with published `0.0.25-17a1e555…`, the source archive advances from
-[`17a1e555` to `34de7330`](https://github.com/securely1g/sonic-build-infra/compare/17a1e555291c64be1a6ff008f33352bffc4f8e5c...34de7330abc72229dfc8dab88dec71b89c52aa88).
-The merged source selects published `rules_distroless@0.9.4.sonic.15`, including
-the native APT exports and public Bazel 8 `cc_import` compatibility entry point.
-Normal local and CI dependency defaults use maintained registry `main` and BCR.
+| Input or action | Before | After |
+| --- | --- | --- |
+| OTEL's actual finalized control and systemd unit | Fails with unsupported compatibility level 1 | Describes the actual source-built TAR and preserves package identity/unit bytes |
+| Source template with the same service | Uses real Debian helpers and requires source compat metadata | Same behavior and same rejection when compat is missing |
+| Finalized control with an undeclared target library | Rejects missing target libc | Still rejected; finalized text cannot replace actual ELF dependency analysis |
+| Existing debug/native/CLI/XML/BFD/DocBook/kernel features | Reviewed179 candidate interfaces | Preserved, including regular debug-file mode `0644` |
 
-Both inherited registry patches remain necessary. `0001-bump-version.patch`
-adapts the source's `0.0.25` declaration to this registry version.
-`0002-registry-cross-test-visibility.patch` remains byte-for-byte unchanged and
-exposes the existing kernel cross-tool tests to the independent registry
-consumer. Both apply with zero fuzz; no native-interface backport is needed.
-The four existing overlays and their integrity values are unchanged.
+Presubmit retains every registry #179 build and test target:37 builds and 43 test labels, including the extended metadata rule tests. Kernel checks remain tools-only and do not generate packages. The ordinary consumer selects published Distroless `.15`, matching native SONiC image use, while preserving the owner's inherited `.13` minimum. Independent AMD64/Trixie metadata tests pass; ordinary combined-candidate and hosted acceptance are in progress. This does not claim complete OTEL or downstream image acceptance.
 
-The merged [registry #176](https://github.com/securely1g/sonic-bazel-registry/pull/176)
-collector fix is inherited from maintained `main`, so native runtime trees with
-Unicode certificate paths use ordinary CI. No collector or publication-policy
-exception is added here. This registration adds no DEB package producer.
-
-## Native validation
-
-The presubmit retains all 32 build targets and 27 tests from the published
-entry, plus the 13 native-interface tests already selected by this PR: **40 tests
-on each of AMD64 and ARM64**. The additional coverage checks native runtime
-execution, ORIGIN, RPATH/RUNPATH, source receipts, installation TARs, debug
-ownership, compiler prefix mapping and Bookworm Perl/Valgrind/Tcl consumers.
-The prefix-map fixture checks `DW_AT_comp_dir`, `DW_AT_name` and `__FILE__`
-against the declared source execpath, including its external repository path.
-
-Source #67 passed its native workflows before merging. This registry version
-must separately pass its own independent-consumer matrix: source CI and the
-previous registration's results do not substitute for registry validation.
-See this PR's current checks for the final native results.
+The review base combines exact registry #179 inputs with [rules_go #193](https://github.com/securely1g/sonic-bazel-registry/pull/193), so the OTEL consumer can select both requirements from one immutable registry endpoint. Registry #147 is a separate Ready but unpublished registration of landed native source; it is neither rewritten nor treated as a published baseline here. Keep this stack Draft until the exact combined source history and registry prerequisites land, then return consumers to maintained main. Existing frozen catalogs remain available while consumers are deliberately reassessed.
