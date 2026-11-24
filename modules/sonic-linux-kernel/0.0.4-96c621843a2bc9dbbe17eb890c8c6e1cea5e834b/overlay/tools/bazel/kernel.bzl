@@ -4,9 +4,11 @@ load("@sonic_build_infra//tools/build_tools:defs.bzl", "PythonRuntimeInfo")
 load(":sources.bzl", "KERNEL_SOURCES")
 load("@sonic_build_infra//oci:runtime_packages.bzl", "RuntimePackagesInfo")
 load("@sonic_build_infra//deb:sonic_deb.bzl", "sonic_deb")
+load("@tar.bzl//tar:tar.bzl", "tar")
+load(":kbuild_tools.bzl", "kernel_kbuild_tools", "KBUILD_TOOLS")
 
 KernelBuildInfo = provider(fields = ["artifacts", "arch", "host_arch", "source_root", "source_files", "build_tools", "raw_files", "runtime_tree", "debug_tree", "receipt", "configuration", "inputs"])
-KernelInstallInfo = provider(fields = ["outputs"])
+KernelInstallInfo = provider(fields = ["outputs", "data_sources"])
 KernelModuleInfo = provider(fields = ["modules", "module_symvers", "kernel"])
 
 KernelConfigInfo = provider(fields = ["values"])
@@ -103,13 +105,12 @@ def _packages(architecture):
     ]
 
 def _action(ctx, config, configuration, inputs, outputs, mnemonic, message):
-    python = ctx.attr._python[PythonRuntimeInfo]
     ctx.actions.write(config, json.encode(configuration))
     ctx.actions.run(
-        executable = python.interpreter,
+        executable = configuration["build_tools"] + "/bin/python3",
         arguments = [ctx.file._runner.path, config.path],
         inputs = depset([config], transitive = [inputs]),
-        tools = [ctx.attr._patchelf[DefaultInfo].files_to_run, python.interpreter, ctx.file._runner, ctx.file._architecture] + python.files.to_list(),
+        tools = [ctx.attr._patchelf[DefaultInfo].files_to_run, ctx.file._runner, ctx.file._architecture] + ctx.files._helpers,
         outputs = outputs,
         env = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC", "PYTHONHASHSEED": "0"},
         mnemonic = mnemonic,
@@ -182,6 +183,7 @@ _kernel_build = rule(
         "debian": attr.label(allow_single_file = True, mandatory = True),
         "build_tools": attr.label(allow_single_file = True, cfg = "exec", mandatory = True),
         "_kernel_config": attr.label(default = Label("//tools/bazel:kernel_config"), providers = [KernelConfigInfo]),
+        "_helpers": attr.label_list(default = [Label(":package_metadata.py")], allow_files = True),
         "_architecture": attr.label(default = Label("//tools/bazel:kernel_arch.py"), allow_single_file = True, cfg = "exec"),
         "_runner": attr.label(default = Label("//tools/bazel:kernel_action.py"), allow_single_file = True, cfg = "exec"),
         "_python": attr.label(default = Label("//tools/bazel:python_runtime"), providers = [PythonRuntimeInfo], cfg = "exec"),
@@ -199,32 +201,65 @@ _CONTROL_FILES = {
 
 def _install_impl(ctx):
     kernel = ctx.attr.kernel[KernelBuildInfo]
-    prefix = kernel.arch + "/" + ctx.attr.role + "/"
+    role = ctx.attr.role
+    prefix = kernel.arch + "/" + role + "/"
     outputs = {
-        "data": ctx.actions.declare_file(prefix + "data.tar"),
+        "data": ctx.actions.declare_file(prefix + "data.mtree"),
         "control_tar": ctx.actions.declare_file(prefix + "control.tar"),
         "control": ctx.actions.declare_file(prefix + "control"),
+        "supplemental": ctx.actions.declare_directory(prefix + "generated"),
     }
-    controls = {name: ctx.actions.declare_file(prefix + "DEBIAN/" + name) for name in _CONTROL_FILES[ctx.attr.role]}
-    if ctx.attr.role == "runtime":
+    controls = {name: ctx.actions.declare_file(prefix + "DEBIAN/" + name) for name in _CONTROL_FILES[role]}
+    payload = list(ctx.files._metadata_sources)
+    inputs = ctx.files._recipe_sources + ctx.files._metadata_sources + [kernel.receipt, kernel.build_tools]
+    if role == "runtime":
         outputs["boot"] = ctx.actions.declare_directory(kernel.arch + "/boot-files")
         outputs["metadata"] = ctx.actions.declare_file(kernel.arch + "/metadata.json")
-    if ctx.attr.role == "debug":
+        payload += [kernel.runtime_tree, kernel.raw_files["image"]]
+        inputs += [kernel.runtime_tree, kernel.raw_files["image"], kernel.raw_files["config"]]
+    elif role == "debug":
         outputs["debug_validation"] = ctx.actions.declare_file(prefix + "debug-validation.json")
+        payload += [kernel.debug_tree, kernel.raw_files["vmlinux"], kernel.raw_files["System.map"]]
+        inputs += payload + [kernel.runtime_tree]
+    elif role == "headers":
+        payload += [kernel.artifacts]
+        inputs += [kernel.artifacts, kernel.raw_files["vmlinux"]]
+    elif role == "headers_common":
+        payload += ctx.files._header_sources
+        inputs += ctx.files._header_sources
+    elif role == "kbuild":
+        payload += ctx.files._script_sources + ctx.files.kbuild_tools
+        inputs += ctx.files._script_sources + ctx.files.kbuild_tools
     config = ctx.actions.declare_file(ctx.label.name + ".action.json")
     configuration = dict(kernel.configuration)
     configuration.update({
-        "mode": "install", "role": ctx.attr.role,
+        "mode": "native-install", "role": role,
+        "mtree_helper": ctx.file._mtree_helper.path,
+        "all_kernel_arches": [],
+        "kbuild_tools": {path: target[DefaultInfo].files.to_list()[0].path for target, path in ctx.attr.kbuild_tools.items()},
         "install_outputs": dict({name: file.path for name, file in outputs.items()}, control_files = {name: file.path for name, file in controls.items()}),
     })
-    inputs = depset([kernel.artifacts, kernel.receipt] + kernel.raw_files.values() +
-                    ([kernel.runtime_tree] if ctx.attr.role in ["runtime", "debug"] else []) +
-                    ([kernel.debug_tree] if ctx.attr.role == "debug" else []), transitive = [kernel.inputs])
-    _action(ctx, config, configuration, inputs, outputs.values() + controls.values(),
-            "SonicKernelInstall", "Installing SONiC %s kernel %s" % (kernel.arch.upper(), ctx.attr.role))
+    triplet = {"amd64": "x86_64-linux-gnu", "arm64": "aarch64-linux-gnu", "armhf": "arm-linux-gnueabihf"}[kernel.arch]
+    configuration["objcopy"] = kernel.build_tools.path + "/bin/" + triplet + "-objcopy"
+    configuration["readelf"] = kernel.build_tools.path + "/bin/" + triplet + "-readelf"
+    ctx.actions.write(config, json.encode(configuration))
+    ctx.actions.run(
+        executable = kernel.build_tools.path + "/bin/python3",
+        arguments = [ctx.file._runner.path, config.path],
+        inputs = depset(inputs + [config, ctx.file._runner, ctx.file._stage, ctx.file._architecture, ctx.file._mtree_helper] + ctx.files._helpers),
+        tools = [ctx.attr._patchelf[DefaultInfo].files_to_run],
+        outputs = outputs.values() + controls.values(),
+        env = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC", "PYTHONHASHSEED": "0"},
+        mnemonic = "SonicKernelInstall",
+        progress_message = "Declare SONiC %s kernel %s installation" % (kernel.arch.upper(), role),
+        execution_requirements = {"block-network": "", "no-remote-exec": "1"},
+    )
+    data_sources = depset(payload + [outputs["supplemental"]])
     groups = {name: depset([file]) for name, file in outputs.items()}
+    groups["data_srcs"] = data_sources
     groups.update({"control_" + name: depset([file]) for name, file in controls.items()})
-    return [DefaultInfo(files = depset(outputs.values() + controls.values())), KernelInstallInfo(outputs = outputs), OutputGroupInfo(**groups)]
+    return [DefaultInfo(files = depset(outputs.values() + controls.values())),
+            KernelInstallInfo(outputs = outputs, data_sources = data_sources), OutputGroupInfo(**groups)]
 
 
 _kernel_install = rule(
@@ -232,8 +267,16 @@ _kernel_install = rule(
     attrs = {
         "kernel": attr.label(providers = [KernelBuildInfo], mandatory = True),
         "role": attr.string(values = ["runtime", "debug", "headers", "headers_common", "kbuild"], mandatory = True),
+        "kbuild_tools": attr.label_keyed_string_dict(allow_files = True),
+        "_recipe_sources": attr.label_list(default = [Label("//:kernel_recipe_sources")], allow_files = True),
+        "_metadata_sources": attr.label_list(default = [Label("@kernel_debian_prepared//:metadata_sources")], allow_files = True),
+        "_header_sources": attr.label_list(default = [Label("@kernel_prepared//:header_sources")], allow_files = True),
+        "_script_sources": attr.label_list(default = [Label("@kernel_prepared//:script_sources")], allow_files = True),
+        "_helpers": attr.label_list(default = [Label(":package_metadata.py"), Label(":package_layout.py"), Label(":kernel_action.py")], allow_files = True),
+        "_mtree_helper": attr.label(default = Label("@sonic_build_infra//deb:mtree.py"), allow_single_file = True),
+        "_stage": attr.label(default = Label(":stage_kernel.py"), allow_single_file = True),
         "_architecture": attr.label(default = Label("//tools/bazel:kernel_arch.py"), allow_single_file = True, cfg = "exec"),
-        "_runner": attr.label(default = Label("//tools/bazel:kernel_action.py"), allow_single_file = True, cfg = "exec"),
+        "_runner": attr.label(default = Label("//tools/bazel:native_install.py"), allow_single_file = True, cfg = "exec"),
         "_python": attr.label(default = Label("//tools/bazel:python_runtime"), providers = [PythonRuntimeInfo], cfg = "exec"),
         "_patchelf": attr.label(default = Label("@patchelf//:patchelf"), executable = True, cfg = "exec"),
     },
@@ -262,7 +305,7 @@ def _packages_impl(ctx):
         OutputGroupInfo(
             runtime = depset([ctx.file.runtime]), debug = depset([ctx.file.debug]),
             development = depset(ctx.files.development), manifest = depset([manifest]),
-            artifacts = depset([kernel.artifacts]), runtime_tar = depset([runtime["data"]]),
+            artifacts = depset([kernel.artifacts]), runtime_tar = depset([ctx.file.runtime_tar]),
             control_tar = depset([runtime["control_tar"]]), boot = depset([runtime["boot"]]), metadata = depset([runtime["metadata"]]),
         ),
     ]
@@ -276,6 +319,7 @@ _kernel_packages = rule(
         "debug": attr.label(allow_single_file = True, mandatory = True),
         "development": attr.label_list(allow_files = True),
         "runtime_install": attr.label(providers = [KernelInstallInfo], mandatory = True),
+        "runtime_tar": attr.label(allow_single_file = True, mandatory = True),
         "debug_install": attr.label(providers = [KernelInstallInfo], mandatory = True),
         "_architecture": attr.label(default = Label("//tools/bazel:kernel_arch.py"), allow_single_file = True, cfg = "exec"),
         "_runner": attr.label(default = Label("//tools/bazel:kernel_action.py"), allow_single_file = True, cfg = "exec"),
@@ -288,19 +332,24 @@ def kernel_packages(name, **kwargs):
     """Compile once; install and compress only the package branches requested."""
     common = {key: kwargs[key] for key in ["target_compatible_with", "exec_compatible_with", "visibility", "tags"] if key in kwargs}
     _kernel_build(name = name + "_build", **kwargs)
+    kernel_kbuild_tools(name = name + "_tools", **common)
     debs = {}
     installs = {}
     for role in ["runtime", "debug", "headers", "headers_common", "kbuild"]:
         install = name + "_" + role + "_install"
         installs[role] = ":" + install
-        _kernel_install(name = install, kernel = ":" + name + "_build", role = role, **common)
-        for output in ["data", "control"] + ["control_" + member for member in _CONTROL_FILES[role]]:
+        _kernel_install(name = install, kernel = ":" + name + "_build", role = role,
+                        kbuild_tools = {":" + name + "_tools_" + key: value for key, value in KBUILD_TOOLS.items()} if role == "kbuild" else {}, **common)
+        for output in ["data", "control", "data_srcs"] + ["control_" + member for member in _CONTROL_FILES[role]]:
             native.filegroup(name = install + "_" + output, srcs = [":" + install], output_group = output, **{key: value for key, value in common.items() if key != "exec_compatible_with"})
         deb = name + "_" + role + "_deb"
         sonic_deb(name = deb, data = ":" + install + "_data", control = ":" + install + "_control",
+                  data_format = "mtree", data_srcs = [":" + install + "_data_srcs"],
                   control_files = {member: ":" + install + "_control_" + member for member in _CONTROL_FILES[role]}, **common)
         debs[role] = ":" + deb
-    _kernel_packages(name = name, kernel = ":" + name + "_build", runtime = debs["runtime"], debug = debs["debug"],
+    tar(name = name + "_runtime_tar", srcs = [":" + name + "_runtime_install_data_srcs"],
+        mtree = ":" + name + "_runtime_install_data", **common)
+    _kernel_packages(name = name, runtime_tar = ":" + name + "_runtime_tar", kernel = ":" + name + "_build", runtime = debs["runtime"], debug = debs["debug"],
                      development = [debs[role] for role in ["headers", "headers_common", "kbuild"]],
                      runtime_install = installs["runtime"], debug_install = installs["debug"], **common)
 

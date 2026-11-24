@@ -26,16 +26,6 @@ MANIFEST = "kernel-packages.json"
 PACKAGE_VERSION = "6.12.41-1"
 EXTRA_SOURCES = ("tools/bazel/kernel_arch.py", "tools/bazel/stage_kernel.py")
 
-# Debian's control-real target deliberately fails after regeneration, to reject
-# stale metadata during packaging. Prepare both outputs before that validation
-# using its maintained prerequisite list, without changing the validation rule.
-CONTROL_PREPARATION = """.PHONY: bazel-prepare-control
-bazel-prepare-control: debian/bin/gencontrol.py $(CONTROL_FILES)
-\tPYTHONHASHSEED=0 python3 $<
-\tmd5sum $(sort $^) > debian/control.md5sum
-"""
-
-
 def package_kinds(architecture="amd64"):
     abi = kernel_abi(architecture)
     suffix = "_" + PACKAGE_VERSION + "_" + architecture + ".deb"
@@ -224,38 +214,46 @@ def phase(name, timings):
 
 
 def metadata_source(debian, prepared, recipe, kernel, architecture, environment, setup=True):
-    """Keep Linux inputs read-only; Debian generators own their writable metadata."""
+    """Merge declared config fragments and run only Linux's Kconfig machinery."""
+    from package_metadata import kernel_configuration_metadata
     kernel.mkdir()
-    for path in debian.iterdir():
-        if path.name not in ('debian', 'BUILD.bazel'):
-            (kernel / path.name).symlink_to(path, target_is_directory=path.is_dir())
-    shutil.copytree(debian / 'debian', kernel / 'debian')
-    shutil.copytree(recipe / 'config.local', kernel / 'debian/config.local')
-    (kernel / 'debian/patches-sonic').symlink_to(recipe / 'patches-sonic', target_is_directory=True)
-    configuration = kernel / 'debian/config.local' / architecture
-    platform = configuration / ('config.sonic-' + environment['CONFIGURED_PLATFORM'])
-    if platform.is_file():
-        shutil.copyfile(platform, configuration / 'config.sonic-platform-specific')
-    for name in ('disable-secureboot-config-checks.patch', 'bazel-debug-sources.patch', 'bazel-relocatable-tools.patch', 'bazel-install-outputs.patch'):
-        run(['patch', '--batch', '--fuzz=0', '-p1', '-i', recipe / 'patches-debian' / name], kernel, environment)
-    run(['bash', recipe / 'manage-config', architecture, environment['SECURE_UPGRADE_MODE'],
-         environment['SECURE_UPGRADE_KERNEL_CAFILE']], kernel, environment)
-    run(['make', '-f', 'debian/rules', '-f', '-', 'bazel-prepare-control'], kernel, environment,
-        input=CONTROL_PREPARATION, text=True)
-    # These source states were completed by the declared prepared_source rule.
-    build = kernel / 'debian/build'
-    build.mkdir(parents=True, exist_ok=True)
-    (build / 'source_sonic').symlink_to(prepared, target_is_directory=True)
-    stamps = kernel / 'debian/stamps'
-    stamps.mkdir(exist_ok=True)
-    for name in ('source', 'source_sonic'):
-        (stamps / name).touch()
-    flavour = kernel_flavour(architecture)
-    if setup:
-        run(['make', '-f', 'debian/rules.gen', 'setup_' + architecture + '_sonic_' + flavour + '_image'], kernel, environment)
-    else:
-        (build / build_directory(architecture)).mkdir()
-    return build / build_directory(architecture)
+    work = kernel / 'build'
+    work.mkdir()
+    if not setup:
+        return work
+    metadata = kernel_configuration_metadata({
+        'architecture': architecture, 'debian_source': str(debian),
+        'recipe_source': str(recipe), 'kernel_config': environment,
+    })
+    runtime = Path(environment['SONIC_KERNEL_TOOLS']).parent
+    command = [str(runtime / 'bin/python3'), str(debian / 'debian/bin/kconfig.py'), str(work / '.config'),
+               *metadata['kconfig'], *metadata['kconfig_options'],
+               '-o', 'MODULE_SIG_KEY="output/signing_key.pem"']
+    run(command, kernel, environment)
+    target = {'amd64': 'x86_64-linux-gnu', 'arm64': 'aarch64-linux-gnu'}[architecture] + '-'
+    variables = [
+        'override ARCH = ' + kernel_architecture(architecture),
+        'override KERNELRELEASE = ' + kernel_abi(architecture),
+        'CCACHE = ccache',
+        'CC = $(if $(DEBIAN_KERNEL_USE_CCACHE),$(CCACHE)) $(CROSS_COMPILE)' + metadata['compiler'],
+        'DEB_BUILD_ARCH ?= $(shell dpkg --print-architecture)',
+        'override CROSS_COMPILE = ' + target,
+        'DEBIAN_KERNEL_NO_CC_VERSION_CHECK = y',
+    ]
+    if metadata.get('compat_gnutype'):
+        variables += ['override CROSS_COMPILE_COMPAT = ' + metadata['compat_gnutype'] + '-',
+                      'override CROSS32_COMPILE = ' + metadata['compat_gnutype'] + '-',
+                      'export CROSS_COMPILE_COMPAT CROSS32_COMPILE']
+    (work / '.kernelvariables').write_text('\n'.join(variables) + '\n')
+    run(['make', '-C', prepared, 'O=' + str(work),
+         *kbuild_tools(runtime, architecture, environment.get('SONIC_KERNEL_HOST_ARCHITECTURE', architecture)),
+         'olddefconfig'], kernel, environment)
+    if metadata.get('enable_signed'):
+        text = (work / '.config').read_text()
+        require('CONFIG_EFI_STUB=y\n' in text, 'Secure Boot: CONFIG_EFI_STUB has wrong value')
+        require('CONFIG_MODULE_SIG_KEY="certs/signing_key.pem"' not in text,
+                'Secure Boot: CONFIG_MODULE_SIG_KEY has default value')
+    return work
 
 
 def kbuild_tools(runtime, architecture, host_architecture):
@@ -305,8 +303,6 @@ def compile_kernel(prepared, kernel, work, runtime, architecture, host_architect
             + ' $(obj)/makemapdata > $@']
     image = 'bzImage' if architecture == 'amd64' else 'Image'
     run(make + [image, 'modules'] + (['dtbs'] if architecture == 'arm64' else []), kernel, environment)
-    run(['python3', kernel / 'debian/bin/buildcheck.py', work, architecture, 'sonic',
-         kernel_flavour(architecture), 'build'], kernel, environment)
     runtime_tree, debug_tree = output / 'image', output / 'image-dbg'
     runtime_tree.mkdir(parents=True)
     debug_tree.mkdir(parents=True)
@@ -333,19 +329,6 @@ def compile_kernel(prepared, kernel, work, runtime, architecture, host_architect
         for name in ('build', 'source'):
             (tree / 'lib/modules' / abi / name).unlink(missing_ok=True)
     (output / 'signing_key.pem').unlink()
-    # Mark the Debian build state only after its complete compilation/install contract succeeded.
-    (kernel / 'debian/stamps' / ('build_' + architecture + '_sonic_' + kernel_flavour(architecture))).touch()
-
-
-def package_kernel(kernel, architecture, environment, role):
-    flavour = kernel_flavour(architecture)
-    prefix = 'binary-arch_' + architecture + '_sonic_' + flavour + '_'
-    targets = {
-        'runtime': prefix + 'image', 'debug': prefix + 'image-dbg',
-        'headers': prefix + 'headers', 'headers_common': 'binary-indep_sonic_headers-common',
-        'kbuild': 'binary-arch_' + architecture + '_kbuild',
-    }
-    run(['make', '-j' + str(BUILD_JOBS), '-f', 'debian/rules.gen', targets[role]], kernel, environment)
 
 
 def move_output(source, destination):
@@ -409,26 +392,6 @@ def export_build_data(prepared, work, config, architecture):
         trees[role] = tree_manifest(source)
         move_output(source, config[role + '_tree'])
     return trees
-
-
-def link_build_data(config, work):
-    """Expose declared generated files directly; installation rules dereference them."""
-    data = Path(config['artifacts']) / 'build'
-    for directory, directories, files in os.walk(data, followlinks=False):
-        relative = Path(directory).relative_to(data)
-        (work / relative).mkdir(parents=True, exist_ok=True)
-        for name in files:
-            (work / relative / name).symlink_to((Path(directory) / name).absolute())
-        for name in list(directories):
-            source = Path(directory) / name
-            if source.is_symlink():
-                (work / relative / name).symlink_to(source.absolute(), target_is_directory=True)
-                directories.remove(name)
-    for name, output in config['raw_files'].items():
-        if name not in ('image', 'kernel.release'):
-            destination = work / ('.config' if name == 'config' else name)
-            destination.unlink(missing_ok=True)
-            destination.symlink_to(Path(output).absolute())
 
 
 def control_fields(text):
@@ -501,7 +464,7 @@ def manifest_action(config):
 def build(config):
     require(config.get("schema") == 6, "unsupported kernel action schema")
     mode = config.get('mode')
-    require(mode in ('compile', 'install', 'manifest'), 'unsupported kernel action mode')
+    require(mode in ('compile', 'manifest'), 'unsupported kernel action mode')
     if mode == 'manifest':
         manifest_action(config)
         return
@@ -512,18 +475,9 @@ def build(config):
     runtime = Path(config['build_tools']).resolve(strict=True)
     marker = runtime_identity(runtime, target_architecture=architecture)
     require(host_architecture == marker['architecture'], 'declared kernel execution host differs from runtime')
-    receipt = None
-    if mode == 'install':
-        receipt = json.loads(Path(config['receipt']).read_text())
-        require(receipt.get('schema') == 4 and receipt.get('compilation_completed') is True
-                and receipt.get('architecture') == architecture
-                and receipt.get('host_architecture') == host_architecture
-                and receipt.get('kernel_config') == kernel_config,
-                'Kernel installation requires a matching successful compile receipt')
-    else:
-        require(set(config['raw_files']) == {'image', 'vmlinux', 'System.map', 'config',
-                                            'Module.symvers', 'kernel.release'},
-                'Kernel compilation must declare all raw kernel interfaces')
+    require(set(config['raw_files']) == {'image', 'vmlinux', 'System.map', 'config',
+                                        'Module.symvers', 'kernel.release'},
+            'Kernel compilation must declare all raw kernel interfaces')
     cross = host_architecture != architecture
     with tempfile.TemporaryDirectory(prefix="kernel-action-", dir=Path.cwd()) as temporary:
         root = Path(temporary).absolute()
@@ -531,9 +485,6 @@ def build(config):
         source.mkdir()
         (root / 'home').mkdir()
         (root / 'tmp').mkdir()
-        # Only Debian installation needs a writable package database.
-        if mode == 'install':
-            packaging_database(runtime, root / 'dpkg')
         recipe = Path(config['recipe_source']).resolve(strict=True)
         inventory = source_inventory(config['sources'])
         prepared_source = Path(config['prepared_source']).resolve(strict=True)
@@ -559,6 +510,7 @@ def build(config):
             "SONIC_KERNEL_DEBUG_STAGE": str(recipe / "tools/bazel/stage_kernel.py"),
             "SONIC_KERNEL_TOOLS": str(runtime / "bin"),
             "SONIC_KERNEL_ARCHITECTURE": architecture,
+            "SONIC_KERNEL_HOST_ARCHITECTURE": host_architecture,
             "SONIC_KERNEL_PATCHELF": str(Path(config["patchelf"]).absolute()),
         }
         environment.update(debian_architecture(runtime, architecture, host_architecture, environment))
@@ -571,58 +523,29 @@ def build(config):
         kernel = source / ('linux-' + kernel_config['KERNEL_VERSION'])
         with phase('configuration', timings):
             work = metadata_source(debian_source, prepared_source, recipe, kernel, architecture,
-                                   environment, setup=mode == 'compile')
-        if mode == 'compile':
-            archive_records = []
-            for archive in config['archives']:
-                require(Path(archive['name']).name == archive['name'], 'unsafe archive filename')
-                require(sha256(archive['path']) == archive['sha256'], 'kernel archive checksum mismatch')
-                archive_records.append({'name': archive['name'], 'sha256': archive['sha256']})
-            print('SONIC_KERNEL_COMPILATION_STARTED', flush=True)
-            with phase('kbuild', timings):
-                compile_kernel(prepared_source, kernel, work, runtime, architecture, host_architecture, environment)
-            with phase('export', timings):
-                core_trees = export_build_data(prepared_source, work, config, architecture)
-            receipt = {
-                'schema': 4, 'architecture': architecture, 'host_architecture': host_architecture,
-                'platform': kernel_config['CONFIGURED_PLATFORM'], 'kernel_config': kernel_config,
-                'kernel_version': kernel_config['KERNEL_VERSION'], 'kernel_abi': kernel_config['KVERSION'],
-                'package_version': PACKAGE_VERSION, 'signing': 'unsigned',
-                'source_date_epoch': SOURCE_DATE_EPOCH,
-                'source_archives': sorted(archive_records, key=lambda entry: entry['name']),
-                'source_tree_sha256': source_tree_sha256(inventory), 'source_files': inventory,
-                'build_tools': marker, 'core_trees': core_trees, 'compilation_completed': True,
-            }
-            Path(config['receipt']).write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
-            print('SONIC_KERNEL_COMPILATION_COMPLETED', flush=True)
-        else:
-            link_build_data(config, work)
-            if config['role'] in ('runtime', 'debug'):
-                output = work / 'output'
-                output.mkdir()
-                name = 'image' if config['role'] == 'runtime' else 'image-dbg'
-                (output / name).symlink_to(Path(config[config['role'] + '_tree']).absolute(),
-                                           target_is_directory=True)
-            triplet = architecture + '_sonic_' + kernel_flavour(architecture)
-            # Satisfy Debian's original setup/build dependencies from a successful
-            # compile action, without rerunning Kconfig or Kbuild in installation.
-            shutil.copyfile(config['raw_files']['config'], kernel / 'debian/build' / ('config.' + triplet))
-            for name in ('setup_' + triplet, 'build_' + triplet):
-                (kernel / 'debian/stamps' / name).touch()
-            spec = dict(config)
-            for name in ('prepared_source', 'debian_source', 'runtime_tree', 'debug_tree', 'artifacts', 'receipt'):
-                spec[name] = str(Path(spec[name]).absolute())
-            spec['raw_files'] = {name: str(Path(path).absolute()) for name, path in config['raw_files'].items()}
-            spec['install_outputs'] = {
-                name: ({member: str(Path(path).absolute()) for member, path in value.items()}
-                       if isinstance(value, dict) else str(Path(value).absolute()))
-                for name, value in config['install_outputs'].items()
-            }
-            spec_path = root / 'install.json'
-            spec_path.write_text(json.dumps(spec))
-            environment['SONIC_KERNEL_INSTALL_CONFIG'] = str(spec_path)
-            with phase('install-' + config['role'], timings):
-                package_kernel(kernel, architecture, environment, config['role'])
+                                   environment)
+        archive_records = []
+        for archive in config['archives']:
+            require(Path(archive['name']).name == archive['name'], 'unsafe archive filename')
+            require(sha256(archive['path']) == archive['sha256'], 'kernel archive checksum mismatch')
+            archive_records.append({'name': archive['name'], 'sha256': archive['sha256']})
+        print('SONIC_KERNEL_COMPILATION_STARTED', flush=True)
+        with phase('kbuild', timings):
+            compile_kernel(prepared_source, kernel, work, runtime, architecture, host_architecture, environment)
+        with phase('export', timings):
+            core_trees = export_build_data(prepared_source, work, config, architecture)
+        receipt = {
+            'schema': 4, 'architecture': architecture, 'host_architecture': host_architecture,
+            'platform': kernel_config['CONFIGURED_PLATFORM'], 'kernel_config': kernel_config,
+            'kernel_version': kernel_config['KERNEL_VERSION'], 'kernel_abi': kernel_config['KVERSION'],
+            'package_version': PACKAGE_VERSION, 'signing': 'unsigned',
+            'source_date_epoch': SOURCE_DATE_EPOCH,
+            'source_archives': sorted(archive_records, key=lambda entry: entry['name']),
+            'source_tree_sha256': source_tree_sha256(inventory), 'source_files': inventory,
+            'build_tools': marker, 'core_trees': core_trees, 'compilation_completed': True,
+        }
+        Path(config['receipt']).write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+        print('SONIC_KERNEL_COMPILATION_COMPLETED', flush=True)
 
 
 if __name__ == "__main__":

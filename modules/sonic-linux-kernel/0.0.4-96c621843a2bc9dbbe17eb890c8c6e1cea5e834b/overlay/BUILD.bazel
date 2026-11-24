@@ -115,3 +115,5 @@ filegroup(name = "boot", srcs = [":kernel_packages"], output_group = "boot")
 filegroup(name = "kernel_metadata.json", srcs = [":kernel_packages"], output_group = "metadata")
 
 exports_files(glob(["patches-sonic/**", "config.local/**", "patches-debian/**"]))
+
+filegroup(name = "kernel_recipe_sources", srcs = glob(["config.local/**"]))
