@@ -2,5 +2,5 @@
 # tools/bazel/kernel/MODULE.bazel so both execute the same kernel action.
 module(name = "sonic-kernel-cache-consumer")
 
-bazel_dep(name = "sonic-linux-kernel", version = "0.0.3-96c621843a2bc9dbbe17eb890c8c6e1cea5e834b", repo_name = "sonic_linux_kernel")
-bazel_dep(name = "sonic-build-infra", version = "0.0.41-edab3bd22b7a9a2ae631f06a1a5072b113045fe7", repo_name = "sonic_build_infra")
+bazel_dep(name = "sonic-linux-kernel", version = "0.0.4-96c621843a2bc9dbbe17eb890c8c6e1cea5e834b", repo_name = "sonic_linux_kernel")
+bazel_dep(name = "sonic-build-infra", version = "0.0.45-77ef625a4ddafc8cdc15f3cc6aee31eabac8a5de", repo_name = "sonic_build_infra")

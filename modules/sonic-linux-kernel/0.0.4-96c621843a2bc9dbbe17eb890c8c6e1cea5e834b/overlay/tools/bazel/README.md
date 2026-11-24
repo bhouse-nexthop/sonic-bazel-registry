@@ -8,8 +8,8 @@ for tools and the target platform for kernel code.
 The build has separate Kbuild, installation and Debian assembly actions. Selecting
 raw files or building an external module runs Kbuild without Debian installation
 or compression. Selecting image assembly inputs installs the runtime package
-without producing any DEB. Final DEBs use the shared `sonic_deb` rule and reuse
-the installation TARs.
+without producing any DEB. Final DEBs use the shared `sonic_deb` rule and consume explicit mtree mappings
+directly. The public runtime TAR is produced lazily from the same mapping.
 
 | Public target | Contents and consumers |
 | --- | --- |
@@ -32,12 +32,17 @@ use `all`. Each shared `sonic_deb` output is a directory containing that single
 DEB. The Make and CI exporters consume these directories directly and publish
 the original basenames.
 
-Linux source files remain read-only inputs. Debian generators use private writable
-packaging metadata. Kbuild uses an independent `O=` directory; large final files
+Linux source files remain read-only inputs. Bazel configuration and installation
+actions read the maintained Debian configuration/template APIs directly. They
+execute neither `debian/rules.gen` nor `dh_*` packaging commands. Kbuild uses an independent `O=` directory; large final files
 and module trees move from it to declared outputs. Debug packages contain symbols,
 not a duplicate Linux source tree. Runtime modules retain signing and stripping;
-debug modules remain unsigned with their original debug information. Debian owns
-package fields, hooks, installation layouts, and the runtime System.map notice.
+debug modules remain unsigned with their original debug information. The Debian recipe remains the source for package fields, hooks, layouts and the
+runtime System.map notice; Bazel declares their generation and mtree mappings.
+The 17 kbuild executables use native C/C++ rules and explicit source generators.
+Dynamic library dependencies are computed by the declared `dpkg-shlibdeps` tool.
+Large debug files are archived from compiler outputs without a copied package
+tree or intermediate payload TAR rewrites.
 The `//:System.map` target exports the real map.
 
 ```sh
