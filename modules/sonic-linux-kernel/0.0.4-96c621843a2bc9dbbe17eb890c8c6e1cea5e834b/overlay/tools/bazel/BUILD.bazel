@@ -14,6 +14,10 @@ exports_files([
     "kernel_action.py",
     "kernel_arch.py",
     "stage_kernel.py",
+    "native_install.py",
+    "kbuild_generate.py",
+    "package_layout.py",
+    "package_metadata.py",
     "verify_debug.py",
 ])
 
@@ -80,7 +84,24 @@ py_test(
     srcs = [
         "kernel_arch.py",
         "stage_kernel.py",
+    "native_install.py",
+    "kbuild_generate.py",
+    "package_layout.py",
+    "package_metadata.py",
         "stage_kernel_test.py",
     ],
     main = "stage_kernel_test.py",
+)
+
+py_test(
+    name = "native_install_test",
+    imports = ["."],
+    srcs = ["native_install_test.py", "native_install.py", "package_layout.py", "package_metadata.py",
+            "kernel_arch.py", "kernel_action.py", "stage_kernel.py"],
+    main = "native_install_test.py",
+)
+py_test(
+    name = "kbuild_generate_test",
+    srcs = ["kbuild_generate_test.py", "kbuild_generate.py"],
+    main = "kbuild_generate_test.py",
 )

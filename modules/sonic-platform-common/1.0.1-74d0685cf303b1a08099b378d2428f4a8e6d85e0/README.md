@@ -1,7 +1,5 @@
-# Register merged sonic-platform-common sources
+# sonic-platform-common
 
-Source: [securely1g/sonic-platform-common@ccb4645c](https://github.com/securely1g/sonic-platform-common/commit/ccb4645c60863d9949549bb233134150764e98a0).
+Platform Daemons imports `SystemLeakStatus` from the installed Platform Common wheel to process leak reports in `thermalctld` and `bmcctld`. The registry test installs the wheel and verifies those status values and the typed API files.
 
-This entry uses the latest maintained-branch commit captured on 2026-11-18. It preserves the owner module base `1.0.1` and its dependency declarations. The registry qualifies the version with the full source commit and retains existing compatible consumer tests and registry adaptations.
-
-Archive integrity, complete patch application, overlay checksums and module identity were checked locally. This preparation does not claim a completed Bazel build or passing CI.
+[Registered source](https://github.com/securely1g/sonic-platform-common/commit/2b84e6a2b24f8e1c937b68140e806a13db302384)
