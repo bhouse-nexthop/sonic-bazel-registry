@@ -1,11 +1,10 @@
-From: Guohan Lu <securely1g@gmail.com>
-Subject: [PATCH] Register the merged sonic-platform-common source commit
+From: Guohan Lu <lguohan@gmail.com>
+Subject: [PATCH] Give the registered sonic-platform-common source its commit-qualified identity
 
-Qualify the exact merged source module identity. Preserve all dependency
-declarations from the source owner; unmerged refresh changes are deferred.
+The registry selects the merged owner revision by its full Git commit.
+Preserve the owner's build rules and dependencies.
 
-Source commit: ccb4645c60863d9949549bb233134150764e98a0
-Scope: downstream registry integration; not an upstream bug fix.
+Source commit: 2b84e6a2b24f8e1c937b68140e806a13db302384
 
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
@@ -13,7 +12,7 @@ Scope: downstream registry integration; not an upstream bug fix.
  module(
      name = "sonic-platform-common",
 -    version = "1.0.1",
-+    version = "1.0.1-ccb4645c60863d9949549bb233134150764e98a0",
++    version = "1.0.1-2b84e6a2b24f8e1c937b68140e806a13db302384",
      bazel_compatibility = [
          ">=8.5.1",
          "<=8.5.1",

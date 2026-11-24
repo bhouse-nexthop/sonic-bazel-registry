@@ -19,8 +19,8 @@ from installer.sources import WheelFile
 
 
 def main():
-    wheel, setup = [Path(arg).absolute() for arg in sys.argv[1:]]
-    assert platform.machine() == "x86_64"
+    wheel, setup = [Path(arg).absolute() for arg in sys.argv[1:3]]
+    assert platform.machine() == sys.argv[3], (platform.machine(), sys.argv[3])
     assert sys.version_info[:2] == (3, 13)
     # Read the owner's literal package contract without executing its setup.py
     # prerequisite checks or importing a second copy of the library.
@@ -30,10 +30,15 @@ def main():
     assert len(calls) == 1
     arguments = {value.arg: value.value for value in calls[0].keywords}
     packages = ast.literal_eval(arguments["packages"])
+    package_data = ast.literal_eval(arguments["package_data"])
     expected = {}
     for package in packages:
         directory = setup.parent / package.replace(".", "/")
         files = list(directory.glob("*.py"))
+        for pattern in package_data.get(package, []):
+            data_files = list(directory.glob(pattern))
+            assert data_files, (package, pattern)
+            files.extend(data_files)
         assert files, package
         expected.update({str(path.relative_to(setup.parent)): path for path in files})
 
@@ -53,16 +58,30 @@ def main():
         site = Path(scheme["purelib"])
         with zipfile.ZipFile(wheel) as archive:
             names = archive.namelist()
-            actual = {name for name in names if name.endswith(".py") and ".dist-info/" not in name}
+            actual = {name for name in names if not name.endswith("/") and ".dist-info/" not in name}
             assert actual == set(expected), (actual, set(expected))
             for name, source in expected.items():
                 assert archive.read(name) == source.read_bytes() == (site / name).read_bytes(), name
             metadata = BytesParser().parsebytes(archive.read(next(name for name in names if name.endswith(".dist-info/METADATA"))))
             assert metadata["Name"].replace("_", "-") == "sonic-platform-common"
             assert metadata["Version"] == "1.0"
+            assert metadata.get_all("Provides-Extra") == ["testing"]
             assert set(metadata.get_all("Requires-Dist", [])) == {
                 "natsort", "PyYAML", "sonic-py-common", "sonic-config-engine",
+                "pytest; extra == 'testing'", "pytest-cov; extra == 'testing'",
+                "mypy<2.5,>=2.4; extra == 'testing'", "jinja2<3.2,>=3.1; extra == 'testing'",
             }
+        # Importing sonic_platform_base loads image-owned dependencies. Check
+        # the installed public constants here; Platform Daemons imports the class
+        # with its full runtime in the thermalctld and bmcctld tests.
+        cooling = ast.parse((site / "sonic_platform_base/liquid_cooling_base.py").read_text())
+        status = next(node for node in cooling.body
+                      if isinstance(node, ast.ClassDef) and node.name == "SystemLeakStatus")
+        constants = {target.id: ast.literal_eval(node.value) for node in status.body
+                     if isinstance(node, ast.Assign) for target in node.targets
+                     if isinstance(target, ast.Name)}
+        for level in ("MINOR", "MAJOR", "CRITICAL"):
+            assert constants[level] == level
         # These public peripheral interfaces require only this owner's wheel.
         # Config-engine/Common-dependent interfaces are covered in owner CI.
         probe = r'''import importlib,importlib.metadata,json,pathlib,sys
@@ -98,8 +117,8 @@ print(json.dumps({'modules':modules}))
             "status": "passed", "architecture": platform.machine(),
             "python": platform.python_version(), "wheel": wheel.name,
             "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
-            "source_revision": "f933850f613036aea22c8aad42eda24134c291d0",
-            "packages": len(set(packages)), "python_files": len(expected),
+            "source_revision": "2b84e6a2b24f8e1c937b68140e806a13db302384",
+            "packages": len(set(packages)), "payload_files": len(expected),
             "installed_probe": json.loads(result.stdout),
             "scope": "Complete owner wheel payload/metadata and installed LED/fan/EEPROM/Y-cable APIs; Common/config-engine runtime is covered by source CI",
         }, indent=2) + "\n")
