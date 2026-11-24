@@ -1,9 +1,9 @@
 {
-  "url": "https://github.com/securely1g/sonic-wpa-supplicant/archive/aad4a4f8fffbde2d8169e9d68182228fbbe11c38.tar.gz",
-  "integrity": "sha256-m+p1OYDRB9Zd/EdNpUrSsX1/p/YOm3MW12T9RbcaCCc=",
-  "strip_prefix": "sonic-wpa-supplicant-aad4a4f8fffbde2d8169e9d68182228fbbe11c38",
+  "url": "https://github.com/securely1g/sonic-wpa-supplicant/archive/372949541598873fd9f42473687f24d13c45535c.tar.gz",
+  "integrity": "sha256-Z8/NXQCKLPXIXkuTDlY26bB1u73e+WauiIsKff1R0gU=",
+  "strip_prefix": "sonic-wpa-supplicant-372949541598873fd9f42473687f24d13c45535c",
   "patches": {
-    "0001-refresh-registry-dependencies.patch": "sha256-dDqmCew2LA66b2fQmw7QXST0w0e7/NaEUTLEIN9B3t0="
+    "0001-stamp-registry-module-version.patch": "sha256-wYR1V6MTd/BDk0UH8sv32EynmZ52xWRSk8SoG8eMNBw="
   },
   "patch_strip": 1
 }
