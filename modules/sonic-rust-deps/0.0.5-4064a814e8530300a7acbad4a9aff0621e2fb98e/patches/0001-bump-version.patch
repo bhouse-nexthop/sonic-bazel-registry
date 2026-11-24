@@ -1,7 +1,7 @@
 From: Guohan Lu <lguohan@gmail.com>
 Subject: [PATCH] Identify the registered Rust dependency source by its commit
 
-Host Services needs the shared Cargo graph with sysinfo 0.40 and procfs 0.18.
+Pin the shared Cargo graph that exposes the DASH HA derive and serializer APIs.
 
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
@@ -9,7 +9,7 @@ Host Services needs the shared Cargo graph with sysinfo 0.40 and procfs 0.18.
  module(
      name = "sonic-rust-deps",
 -    version = "0.0.5",
-+    version = "0.0.5-2510c15a401970f362465171d0228e69db5259be",
++    version = "0.0.5-4064a814e8530300a7acbad4a9aff0621e2fb98e",
      bazel_compatibility = [
          ">=8.5.1",
          "<=8.5.1",

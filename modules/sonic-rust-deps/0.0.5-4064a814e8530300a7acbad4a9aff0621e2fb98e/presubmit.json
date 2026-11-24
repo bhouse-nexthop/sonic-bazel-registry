@@ -60,7 +60,10 @@
     "@sonic-rust-deps//:syslog",
     "@sonic-rust-deps//:sysinfo_0_40",
     "@sonic-rust-deps//:procfs_0_18",
-    "@sonic-rust-deps//tests:host_process_api_test"
+    "@sonic-rust-deps//tests:host_process_api_test",
+    "@sonic-rust-deps//:serde_serializer_quick_unsupported1",
+    "@sonic-rust-deps//:syn3",
+    "@sonic-rust-deps//:thiserror2"
   ],
   "test_targets": [
     "@sonic-rust-deps//tests:serde_roundtrip_test",
