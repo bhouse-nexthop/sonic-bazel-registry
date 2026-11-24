@@ -1,9 +1,9 @@
 {
-  "url": "https://github.com/securely1g/sonic-build-infra/archive/5bf69bc0a7d9ea9f4a5606264be592867cd29d1e.tar.gz",
-  "strip_prefix": "sonic-build-infra-5bf69bc0a7d9ea9f4a5606264be592867cd29d1e/rust/deps",
-  "integrity": "sha256-ZnuRmGTI3cTS9e0QZgcSfQLdwSBEXKnAmQgruovgdmo=",
+  "url": "https://github.com/securely1g/sonic-build-infra/archive/2510c15a401970f362465171d0228e69db5259be.tar.gz",
+  "strip_prefix": "sonic-build-infra-2510c15a401970f362465171d0228e69db5259be/rust/deps",
+  "integrity": "sha256-8s6JhnOBEirujNmwzQhLKncoHUScfeEhme6pbTUkV9k=",
   "patch_strip": 1,
   "patches": {
-    "0001-bump-version.patch": "sha256-tSk87i6paUQY4Zh5hnx9/TLnlytjzaqOxYm4LtgX0fA="
+    "0001-bump-version.patch": "sha256-JBHUIncRSQvrnV1KSzWLiP5X9+MbyQSAxuduAbH/qTI="
   }
 }

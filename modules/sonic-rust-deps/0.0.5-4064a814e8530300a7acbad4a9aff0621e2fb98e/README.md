@@ -1,5 +1,3 @@
-# sonic-rust-deps 0.0.5-5bf69bc0a7d9ea9f4a5606264be592867cd29d1e
+# Shared Rust dependencies for Host Services
 
-Registers the fixed sonic-build-infra #110 first-parent source archive. Preserves the Rust 1.90.0 toolchain and existing five behavioral tests; adds native build coverage for the seven newly public crate aliases. Cargo.lock is taken unchanged from the source archive.
-
-The original host-services Cargo.lock remains a separate dependency graph; this module does not replace it.
+Host Services uses the fallible process API in sysinfo 0.40.3, procfs 0.18.0 and regex 1.13.1. The original sysinfo and procfs labels continue to select their previous versions. Both architecture checks compile the new aliases with Rust 1.95 and exercise live process lookups in the test process. [Source change](https://github.com/securely1g/sonic-build-infra/pull/138)
