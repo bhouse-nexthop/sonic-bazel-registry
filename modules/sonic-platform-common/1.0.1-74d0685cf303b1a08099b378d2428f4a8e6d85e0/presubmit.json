@@ -1,10 +1,12 @@
 {
   "architectures": [
-    "amd64"
+    "amd64",
+    "arm64"
   ],
   "consumer_deps": [],
   "platforms": {
-    "amd64": "@platforms//host:host"
+    "amd64": "@platforms//host:host",
+    "arm64": "@platform_common_registry_consumer//:linux_arm64"
   },
   "integration_test_module": "tests/integration",
   "build_targets": [
