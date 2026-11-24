@@ -57,16 +57,20 @@
     "@sonic-rust-deps//:psutil",
     "@sonic-rust-deps//:regex",
     "@sonic-rust-deps//:sysinfo",
-    "@sonic-rust-deps//:syslog"
+    "@sonic-rust-deps//:syslog",
+    "@sonic-rust-deps//:sysinfo_0_40",
+    "@sonic-rust-deps//:procfs_0_18",
+    "@sonic-rust-deps//tests:host_process_api_test"
   ],
   "test_targets": [
     "@sonic-rust-deps//tests:serde_roundtrip_test",
     "@sonic-rust-deps//tests:tracing_test",
     "@sonic-rust-deps//tests:supervisor_io_test",
     "@sonic-rust-deps//tests:panic_runtime_test",
-    "@sonic-rust-deps//tests:dash_ha_contract_test"
+    "@sonic-rust-deps//tests:dash_ha_contract_test",
+    "@sonic-rust-deps//tests:host_process_api_test"
   ],
   "rust_toolchain": {
-    "version": "1.90.0"
+    "version": "1.95.0"
   }
 }
