@@ -38,11 +38,10 @@ http_archive(
     name = "dash_sai_source",
     build_file = "//bazel:sai_source.BUILD.bazel",
     patch_strip = 1,
-    patches = ["//bazel:direct_metadata_inputs.patch"],
-    remote_patch_strip = 1,
-    remote_patches = {
-        "https://raw.githubusercontent.com/securely1g/sonic-bazel-registry/05a3dad807844689397bd93e29b75a91b239b714/modules/sai/1.18.0-sonic.1/patches/configurable_aspell.patch": "sha256-HL08+hpvG2lfNAo0fSSthGTCggQWLD4RkKQjtU3Ihz8=",
-    },
+    patches = [
+        "//bazel:configurable_aspell.patch",
+        "//bazel:direct_metadata_inputs.patch",
+    ],
     sha256 = "1ca9533138f7e5be68473cebf062a5ca254b7673b6f368da7037694e173210c1",
     strip_prefix = "SAI-8dd59e5eba472f0e53e8db00530e7c6e5ce2a335",
     type = "tar.gz",

@@ -5,6 +5,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "configurable_aspell.patch",
     "direct_metadata_inputs.patch",
     "requirements_lock.txt",
     "sai_source.BUILD.bazel",

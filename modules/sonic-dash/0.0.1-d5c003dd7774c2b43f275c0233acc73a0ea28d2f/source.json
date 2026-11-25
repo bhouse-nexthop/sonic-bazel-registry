@@ -5,9 +5,10 @@
   "archive_type": "tar.gz",
   "overlay": {
     "BUILD.bazel": "sha256-b6/vPfnShpNNDakKFHVB5Q4+UcywC97JzVmXnG094FE=",
-    "MODULE.bazel": "sha256-KqoLwEwewxtkyy0EMHfNJijwaGTgkE0gSqlVFZE0UEc=",
-    "bazel/BUILD.bazel": "sha256-56XJE6IxVxeLBDU46gpilz8eE2brDGNua9CC3R8wTyY=",
+    "MODULE.bazel": "sha256-sOKrqdsiiRsblj/XS9E/6iJorFQdKVoM/LhO+MD8aoI=",
+    "bazel/BUILD.bazel": "sha256-rYFDO5BovN/Ydz757uL0SOou95gOdS6Iawbub6id0BA=",
     "bazel/README.md": "sha256-ANMncNu53CMSlEuf3LUpHWbqfB27ZHB6of35ph7qGS4=",
+    "bazel/configurable_aspell.patch": "sha256-HL08+hpvG2lfNAo0fSSthGTCggQWLD4RkKQjtU3Ihz8=",
     "bazel/direct_metadata_inputs.patch": "sha256-p34AniYVVYNhC9xW4jwaOQ2i2AFrQoSkr2fTL8gagNE=",
     "bazel/generate_metadata.py": "sha256-TeQi3+lvA6pftT9Ym2Rzqg8HRnzjDbjRyjEhVfE+428=",
     "bazel/metadata.bzl": "sha256-S0rBe8SXtn+1MAfke9hCZIT9dwvOXZcxVd8Liu1KNyw=",
