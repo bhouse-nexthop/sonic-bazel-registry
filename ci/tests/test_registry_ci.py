@@ -977,6 +977,32 @@ class VersionPolicyTests(FixtureTestCase):
             with self.assertRaisesRegex(registry_ci.RegistryError, "published version changed or removed"):
                 registry_ci.plan(checkout, None, head, latest_versions=True, published=before, push=True)
 
+    def test_standalone_catalog_is_an_explicit_dispatch_with_a_distinct_check(self) -> None:
+        self.entry("alpha", "1.0.0")
+        published = self.commit("publish alpha")
+        self.git("branch", "-M", "main")
+        self.git("checkout", "-b", "candidate")
+        self.entry("beta", "1.0.0")
+        head = self.commit("add beta")
+        workflow = (registry_ci.ROOT / ".github/workflows/registry-ci.yml").read_text()
+        shell = workflow.split("          POLICY_FLAGS=()\n", 1)[1].split("          printf 'Event:", 1)[0]
+        self.assertIn("ALL_VERSIONS: ${{ inputs.all_versions || inputs.standalone_catalog }}", workflow)
+        self.assertIn("inputs.standalone_catalog && 'Registry snapshot validation' || 'Registry CI'", workflow)
+        for event, standalone, expected in [
+            ("workflow_dispatch", "true", head),
+            ("workflow_dispatch", "false", published),
+            ("pull_request", "true", published),
+            ("push", "true", published),
+        ]:
+            with self.subTest(event=event, standalone=standalone):
+                env = {**os.environ, "EVENT_NAME": event, "HEAD_SHA": head, "BEFORE_SHA": published,
+                       "STANDALONE_CATALOG": standalone, "GIT_CONFIG_COUNT": "1",
+                       "GIT_CONFIG_KEY_0": f"url.{self.root.as_uri()}.insteadOf",
+                       "GIT_CONFIG_VALUE_0": "https://github.com/securely1g/sonic-bazel-registry.git"}
+                result = subprocess.run(["bash", "-euc", shell + '\nprintf "%s" "$PUBLISHED_SHA"'],
+                                        cwd=self.root, env=env, text=True, capture_output=True, check=True)
+                self.assertEqual(result.stdout, expected)
+
     def test_unknown_or_missing_publication_baseline_fails_closed(self) -> None:
         """No --all or missing-SHA fallback may bypass release-policy checks."""
         self.entry("alpha", "1.0.0")

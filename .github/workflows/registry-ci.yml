@@ -10,6 +10,10 @@ on:
         description: Test every configured historical version instead of only the latest
         type: boolean
         default: false
+      standalone_catalog:
+        description: Build and test every version in the selected ref as a standalone catalog
+        type: boolean
+        default: false
       private_mirror_probe:
         description: Verify private Debian mirror availability with fresh Bazel downloads
         type: boolean
@@ -76,7 +80,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          ALL_VERSIONS: ${{ inputs.all_versions }}
+          ALL_VERSIONS: ${{ inputs.all_versions || inputs.standalone_catalog }}
+          STANDALONE_CATALOG: ${{ inputs.standalone_catalog }}
           P4_RUNNER_PROFILE: ${{ vars.REGISTRY_P4_RUNNER_PROFILE || 'large' }}
         run: |
           set -euo pipefail
@@ -90,6 +95,9 @@ jobs:
               git fetch --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$BEFORE_SHA"
             fi
             POLICY_FLAGS+=(--push)
+          elif [[ "$EVENT_NAME" == workflow_dispatch && "$STANDALONE_CATALOG" == true ]]; then
+            # Exercise the complete selected catalog without asking to publish it.
+            PUBLISHED_SHA="$HEAD_SHA"
           else
             # Use the maintained repository, including for forks and stacked
             # PRs. Anonymous public fetch needs no write token or credentials.
@@ -400,7 +408,7 @@ jobs:
     secrets: *module_secrets
 
   required:
-    name: Registry CI
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.standalone_catalog && 'Registry snapshot validation' || 'Registry CI' }}
     if: always()
     needs: [plan, unit, cross_fixture, modules_local, modules_overflow]
     runs-on: [self-hosted, Linux, X64, debian-trixie-container]
