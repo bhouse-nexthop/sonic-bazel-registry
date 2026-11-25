@@ -1,0 +1,23 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@sonic_build_infra//tar:sonic_deploy_tar.bzl", "sonic_deploy_tar")
+
+sonic_deploy_tar(
+    name = "package",
+    binaries = {
+        "./usr/bin/external_hello uid=0 gid=0 time=0 mode=0755 type=file": "@deploy_tar_external_binary//:external_hello",
+    },
+    force_debug_build = True,
+)
+
+sh_test(
+    name = "package_test",
+    srcs = ["package_test.sh"],
+    args = [
+        "$(location :package)",
+        "$(location :package.debug_symbols)",
+    ],
+    data = [
+        ":package",
+        ":package.debug_symbols",
+    ],
+)

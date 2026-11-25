@@ -1,0 +1,19 @@
+{
+  "architectures": [
+    "amd64",
+    "arm64"
+  ],
+  "consumer_deps": [],
+  "platforms": {
+    "amd64": "@sonic_build_infra//platforms:x86_64_trixie",
+    "arm64": "@sonic_build_infra//platforms:aarch64_trixie"
+  },
+  "integration_test_module": "tests/consumer",
+  "build_targets": [
+    "//:package",
+    "//:package.debug_symbols"
+  ],
+  "test_targets": [
+    "//:package_test"
+  ]
+}
