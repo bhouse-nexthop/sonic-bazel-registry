@@ -1,6 +1,8 @@
 """Check nested rules_go builds use native Bazel and return ARM64 outputs."""
 import importlib.util
 import json
+import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +17,19 @@ spec.loader.exec_module(registry_ci)
 
 
 class NestedGoBuildTest(unittest.TestCase):
+    def test_nested_tests_resolve_with_the_outer_catalog_and_bcr(self):
+        registries = ["--registry=" + self.work.as_uri(), "--registry=https://bcr.bazel.build/"]
+        flags = [registries[0], "--lockfile_mode=update", registries[1]]
+        probe = [sys.executable, "-c", "import os; print(os.environ['GO_BAZEL_TEST_BAZELFLAGS'])"]
+        for executor in ([], ["/bin/sh", "-c", 'exec "$@"', "test-executor"]):
+            with self.subTest(executor=executor):
+                prefix = registry_ci.test_command_prefix("rules_go", flags, executor)
+                command = shlex.split(shlex.join(prefix)) + probe
+                observed = subprocess.check_output(command, env={**os.environ,
+                    "GO_BAZEL_TEST_BAZELFLAGS": "--registry=https://historical.invalid"}, text=True)
+                self.assertEqual(shlex.split(observed), registries)
+                self.assertEqual(registry_ci.test_command_prefix("gazelle", flags, executor), executor)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="nested go ")
         self.addCleanup(temporary.cleanup)

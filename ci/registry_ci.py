@@ -1707,6 +1707,15 @@ def prepare_github_sources(root: Path, module: str, version: str, execution_arch
     return flags
 
 
+def test_command_prefix(module: str, flags: list[str], executor: list[str]) -> list[str]:
+    if module == "rules_go":
+        # go_bazel_test writes this variable into its nested .bazelrc. Its rule
+        # sets the variable explicitly, which takes precedence over --test_env.
+        registries = [flag for flag in flags if flag.startswith("--registry=")]
+        return ["/usr/bin/env", f"GO_BAZEL_TEST_BAZELFLAGS={shlex.join(registries)}", *executor]
+    return executor
+
+
 def prepare_nested_go_tests(root: Path, work_dir: Path, bazel: str) -> Path:
     """Expose native Bazel and the outer ARM toolchain to the original Go tests."""
     adapter = work_dir / "cross-cc-repository"
@@ -2149,7 +2158,9 @@ def run(root: Path, module: str, version: str, architecture: str,
                 # A parallel ARM build can cache paths from the same QEMU root.
                 # Give PRoot private mount points so its exit cannot remove them.
                 test_flags.append("--test_env=" + PROOT_PRIVATE_BINDS)
-                test_flags.append("--run_under=" + shlex.join(executor_prefix))
+            test_prefix = test_command_prefix(module, flags, executor_prefix)
+            if test_prefix:
+                test_flags.append("--run_under=" + shlex.join(test_prefix))
             test_flags.extend(cross_test_timeout_flags(module, version, cross_compile, [*flags, *test_flags]))
             # Export HOME before Bazel's test setup assigns TEST_TMPDIR. With
             # HOME absent, that shell assignment is invisible to Python and
