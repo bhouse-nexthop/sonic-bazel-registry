@@ -239,7 +239,9 @@ class ArmCrossRuntimeIntegrationTest(unittest.TestCase):
                 output_root = work / "bazel"
                 bazel_prefix = [os.environ["REGISTRY_CI_TEST_BAZEL"], "--ignore_all_rc_files",
                                 "--host_jvm_args=-Xmx2g", "--output_user_root=" + str(output_root)]
-                flags = ["--registry=" + ROOT.as_uri(), "--registry=https://bcr.bazel.build/",
+                # Exercise this runner's compiler and emulator without depending on
+                # the worker's remote action cache. Source downloads remain cached.
+                flags = ["--remote_cache=", "--registry=" + ROOT.as_uri(), "--registry=https://bcr.bazel.build/",
                          "--experimental_downloader_config=" + str(ROOT / "ci/source_mirrors.cfg"),
                          *registry_ci.HTTP_DOWNLOAD_FLAGS, "--lockfile_mode=update",
                          "--jobs=1", "--discard_analysis_cache"]
